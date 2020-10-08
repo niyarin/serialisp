@@ -16,22 +16,24 @@
 (defn sym-number->sym [number]
   (str "continuation" number))
 
-
-(defn- cps-funcall [prevs expression {:keys [nexts sym-numbers cont] :or {nexts nil} :as meta-data}]
+(defn- cps-funcall [prevs expression
+                    {:keys [nexts sym-numbers cont]
+                     :or {nexts nil} :as meta-data}]
   (cond
     (and (empty? expression)
          (empty? nexts)) (vec (cons* (first prevs) cont (next prevs)))
     (empty? expression)
-      (let [current-expression (first nexts)]
-        (vons* (first prevs)
-               ["lambda" [(sym-number->sym (:sym-number current-expression))]
-                 (cps* (:expression-type current-expression)
-                       (conj (:prevs current-expression) (sym-number->sym (:sym-number current-expression)))
-                       (:expression current-expression)
-                       (assoc meta-data
-                              :nexts (next nexts)
-                              :sym-numbers (next sym-numbers)))]
-               (next prevs)))
+    (let [current-expression (first nexts)]
+      (vons* (first prevs)
+             ["lambda" [(sym-number->sym (:sym-number current-expression))]
+              (cps* (:expression-type current-expression)
+                    (conj (:prevs current-expression)
+                          (sym-number->sym (:sym-number current-expression)))
+                    (:expression current-expression)
+                    (assoc meta-data
+                           :nexts (next nexts)
+                           :sym-numbers (next sym-numbers)))]
+             (next prevs)))
     :else
     (cps* nil nil (first expression)
           (assoc meta-data
@@ -39,6 +41,21 @@
                                :expression-type :funcall
                                :prevs prevs
                                :expression (next expression)}
+                              nexts)
+                 :sym-numbers (next sym-numbers)))))
+
+(defn cps-if [prevs expression
+              {:keys [sym-numbers nexts] :as meta-data}]
+  (if (= (count prevs) 1)
+    (let [true-expression (cps* nil nil (first expression) meta-data)
+          false-expression (cps* nil nil (second expression) meta-data)]
+      ["if" (first prevs) true-expression false-expression])
+    (cps* nil nil (second expression)
+          (assoc meta-data
+                 :nexts (cons {:sym-number (first sym-numbers)
+                               :expression-type :if
+                               :prevs prevs
+                               :expression (nnext expression)}
                               nexts)
                  :sym-numbers (next sym-numbers)))))
 
@@ -53,26 +70,24 @@
                    :nexts (next nexts)
                    :sym-numbers (cons (:sym-number current-expression)
                                       sym-numbers))))))
+
 (defn cps-lambda [[_ bindings body] {:keys [sym-numbers] :as meta-data}]
   (let [cont-sym (sym-number->sym (first sym-numbers))]
     ["lambda" (vec (cons cont-sym bindings))
      (cps* nil nil body (assoc meta-data :sym-numbers (next sym-numbers)
-                                         :cont cont-sym))]))
+                               :cont cont-sym))]))
 
-(defn cps* [exp-type prev-expressions expression
-            {:keys [nexts] :or {nexts nil} :as meta-data}]
+(defn cps* [exp-type prev-expressions expression meta-data]
   (if (const-val? expression)
     (cps-const expression meta-data)
     (case exp-type
-      :if nil
+      :if (cps-if prev-expressions expression meta-data)
       :funcall (cps-funcall prev-expressions expression meta-data)
       (case (first expression)
         "lambda" (cps-lambda expression meta-data)
-        "if" nil
+        "if" (cps* :if [] expression meta-data)
         (cps* :funcall [] expression meta-data)))))
 
 (defn cps [expression]
   (cps* nil nil expression {:sym-numbers (range)
-                            :cont nil }))
-
-(cps ["list" ["lambda" ["arg1" "arg2" ] ["list" "arg1" ["list" "arg2"]]] 2])
+                            :cont nil}))
