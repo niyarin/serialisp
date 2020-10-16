@@ -1,7 +1,7 @@
 (ns serialisp.convert)
 
 (defn- const-val? [v]
-  (or (number? v) (string? v) (symbol? v) (keyword? v)))
+  (or (number? v) (string? v) (symbol? v) (keyword? v) (= v [])))
 
 (defn- cons* [car & tail]
   (if (empty? tail)
@@ -13,7 +13,7 @@
 
 (declare cps*)
 
-(defn sym-number->sym [number]
+(defn- sym-number->sym [number]
   (str "continuation" number))
 
 (defn- cps-funcall [prevs expression
@@ -44,7 +44,7 @@
                               nexts)
                  :sym-numbers (next sym-numbers)))))
 
-(defn cps-if [prevs expression
+(defn- cps-if [prevs expression
               {:keys [sym-numbers nexts] :as meta-data}]
   (if (= (count prevs) 1)
     (let [true-expression (cps* nil nil (first expression) meta-data)
@@ -59,7 +59,7 @@
                               nexts)
                  :sym-numbers (next sym-numbers)))))
 
-(defn cps-const [v {:keys [nexts sym-numbers] :or {nexts nil} :as meta-data}]
+(defn- cps-const [v {:keys [nexts sym-numbers] :or {nexts nil} :as meta-data}]
   (if (empty? nexts)
     v
     (let [current-expression (first nexts)]
@@ -71,13 +71,13 @@
                    :sym-numbers (cons (:sym-number current-expression)
                                       sym-numbers))))))
 
-(defn cps-lambda [[_ bindings body] {:keys [sym-numbers] :as meta-data}]
+(defn- cps-lambda [[_ bindings body] {:keys [sym-numbers] :as meta-data}]
   (let [cont-sym (sym-number->sym (first sym-numbers))]
     ["lambda" (vec (cons cont-sym bindings))
      (cps* nil nil body (assoc meta-data :sym-numbers (next sym-numbers)
                                :cont cont-sym))]))
 
-(defn cps* [exp-type prev-expressions expression meta-data]
+(defn- cps* [exp-type prev-expressions expression meta-data]
   (if (const-val? expression)
     (cps-const expression meta-data)
     (case exp-type
